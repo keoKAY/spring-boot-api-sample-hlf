@@ -3,19 +3,27 @@ package anuznomii.lol.apihyperledgerfabricspring.services;
 import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.PrivateKey;
 import java.util.Properties;
+import java.util.Set;
 
 import org.bouncycastle.jcajce.provider.asymmetric.ec.SignatureSpi.ecDSARipeMD160;
 import org.hyperledger.fabric.gateway.Identities;
 import org.hyperledger.fabric.gateway.Wallet;
 import org.hyperledger.fabric.gateway.Wallets;
+import org.hyperledger.fabric.sdk.Enrollment;
+import org.hyperledger.fabric.sdk.User;
+import org.hyperledger.fabric.gateway.X509Identity;
+// import org.hyperledger.fabric.sdk.identity.X509Identity;
 import org.hyperledger.fabric.sdk.security.CryptoSuite;
 import org.hyperledger.fabric.sdk.security.CryptoSuiteFactory;
 import org.hyperledger.fabric_ca.sdk.EnrollmentRequest;
 import org.hyperledger.fabric_ca.sdk.HFCAClient;
+import org.hyperledger.fabric_ca.sdk.RegistrationRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import anuznomii.lol.apihyperledgerfabricspring.models.CAEnrollmentRequest;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 
@@ -45,13 +53,128 @@ public class FabricCAService {
 
     @PostConstruct
     public void init() throws Exception {
+
         // create wallet instance
         this.wallet = Wallets.newFileSystemWallet(
                 Paths.get(walletPath));
         // create admin first, in order to register and enroll the user
         createAdminUserOrg1();
+
+        // Create a new user 
+        CAEnrollmentRequest request = CAEnrollmentRequest.builder()
+                .username("client1")
+                .affliation("org1.department1")
+                .type("client")
+                .secret("user1pw")
+                .registrarUsername("admin")
+                .build();
+        registerAndEnrollUser(request);
+            
     }
 
+    public void registerAndEnrollUser(CAEnrollmentRequest request) throws Exception {
+
+        // HFCA client
+        var props = new Properties();
+        if (tlsEnabled) {
+            File pemFile = new File(org1CertificatePath);
+            if (!pemFile.exists()) {
+                throw new Exception("Certificate org1 CA file does not exist");
+            }
+            props.setProperty("pemFile", org1CertificatePath);
+            props.setProperty("allowAllHostNames", "true");
+            props.put("connectTimeout", "30000");
+            props.put("readTimeout", "30000");
+        }
+        var caClient = HFCAClient.createNewInstance(
+                org1CaUrl,
+                props);
+        caClient.setCryptoSuite(CryptoSuite.Factory.getCryptoSuite());
+
+        // 1. register
+        var registrationRequest = new RegistrationRequest(
+                request.getUsername());
+        registrationRequest.setAffiliation(request.getAffliation());
+        registrationRequest.setType("client");
+        // we also have the auto generate the secret if the user doens't prvoide us the
+        // secret
+        registrationRequest.setSecret(request.getSecret());
+        registrationRequest.setMaxEnrollments(-1); // unlimited enrollments\
+
+        var adminIdentity = wallet.get("admin");
+        // 1.1 getting the registrar
+        var adminUser = new User() {
+
+            X509Identity x509Identity = (X509Identity) adminIdentity;
+
+            @Override
+            public String getName() {
+                return "admin";
+            }
+
+            @Override
+            public Set<String> getRoles() {
+                return null;
+            }
+
+            @Override
+            public String getAccount() {
+                return null;
+            }
+
+            @Override
+            public String getAffiliation() {
+                return request.getAffliation();
+            }
+
+            @Override
+            public Enrollment getEnrollment() {
+                return new Enrollment() {
+
+                    @Override
+                    public PrivateKey getKey() {
+                        return x509Identity.getPrivateKey();
+                    }
+
+                    @Override
+                    public String getCert() {
+                        return Identities.toPemString(x509Identity.getCertificate());
+                    }
+
+                };
+            }
+
+            @Override
+            public String getMspId() {
+                return "Org1MSP";
+            }
+
+        };
+        // register the user
+        caClient.register(registrationRequest,
+                adminUser);
+        log.info("Successfully Register a new User :{}", request.getUsername());
+        // 2. enroll
+        var enrollmentRequest = new EnrollmentRequest();
+        enrollmentRequest.setProfile("tls");
+        enrollmentRequest.addHost("localhost");
+
+        var enrollment = caClient.enroll(
+                request.getUsername(),
+                request.getSecret(),
+                enrollmentRequest);
+        // 3. add to wallet
+
+        var certificate = Identities.readX509Certificate(
+                enrollment.getCert());
+        var userIdentity = Identities.newX509Identity(
+                "Org1MSP", certificate, enrollment.getKey());
+
+        wallet.put("client1", userIdentity);
+
+    }
+
+    // private void storeIdentityToWallet(String label , )
     private void createAdminUserOrg1() throws Exception {
 
         // 1. create enrollment request
