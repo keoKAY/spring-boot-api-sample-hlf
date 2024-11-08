@@ -1,7 +1,7 @@
 #!/bin/bash
 message="$1"
 if [ -z "$message" ]; then
-    echo "Usage: $0 <commit message>"
+    echo "🔴 Usage: $0 <commit message> !! "
     exit 1
 fi
 git add . 
