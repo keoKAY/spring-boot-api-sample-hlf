@@ -31,7 +31,10 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     // we need to add the dependencies fabric-gateway 
-    implementation 'org.hyperledger.fabric:fabric-gateway:1.7.0'
+    // implementation 'org.hyperledger.fabric:fabric-gateway:1.7.0'
+    implementation 'org.hyperledger.fabric:fabric-gateway-java:2.2.9'
+
+    // dependencies for grpc
     implementation platform('com.google.protobuf:protobuf-bom:4.28.2')
     implementation platform('io.grpc:grpc-bom:1.67.1')
     compileOnly 'io.grpc:grpc-api'
