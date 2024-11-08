@@ -24,6 +24,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import anuznomii.lol.apihyperledgerfabricspring.models.CAEnrollmentRequest;
+import anuznomii.lol.apihyperledgerfabricspring.utils.FabricUtils;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 
@@ -57,10 +58,19 @@ public class FabricCAService {
         // create wallet instance
         this.wallet = Wallets.newFileSystemWallet(
                 Paths.get(walletPath));
-        // create admin first, in order to register and enroll the user
-        createAdminUserOrg1();
 
-        // Create a new user 
+        // check identity existence
+        if (FabricUtils.checkIdentityExistence("admin", wallet)) {
+
+            log.info("Admin already exists in the wallet");
+
+        } else {
+            log.info("Identity doesn't exist in the wallet ! ");
+        }
+        // create admin first, in order to register and enroll the user
+        // createAdminUserOrg1();
+
+        // Create a new user
         CAEnrollmentRequest request = CAEnrollmentRequest.builder()
                 .username("client1")
                 .affliation("org1.department1")
@@ -68,24 +78,19 @@ public class FabricCAService {
                 .secret("user1pw")
                 .registrarUsername("admin")
                 .build();
-        registerAndEnrollUser(request);
-            
+        // registerAndEnrollUser(request);
+
     }
 
     public void registerAndEnrollUser(CAEnrollmentRequest request) throws Exception {
 
         // HFCA client
         var props = new Properties();
-        if (tlsEnabled) {
-            File pemFile = new File(org1CertificatePath);
-            if (!pemFile.exists()) {
-                throw new Exception("Certificate org1 CA file does not exist");
-            }
-            props.setProperty("pemFile", org1CertificatePath);
-            props.setProperty("allowAllHostNames", "true");
-            props.put("connectTimeout", "30000");
-            props.put("readTimeout", "30000");
-        }
+        FabricUtils.setTlsProps(
+                props,
+                org1CertificatePath,
+                tlsEnabled);
+
         var caClient = HFCAClient.createNewInstance(
                 org1CaUrl,
                 props);
